@@ -117,33 +117,6 @@ jobs:
         echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
 
 
-        Write-Host "Tailscale IP: $ip"
-
-
-
-    # -----------------------------
-    # Detect Drive
-    # -----------------------------
-    - name: Detect Drive
-      shell: powershell
-      run: |
-
-        $drives = Get-PSDrive -PSProvider FileSystem
-
-
-        foreach($d in $drives){
-
-          if($d.Name -ne "C"){
-
-            echo "TEMP_DRIVE=$($d.Name):" >> $env:GITHUB_ENV
-
-            break
-
-          }
-
-        }
-
-
 
     # -----------------------------
     # Create folders
@@ -156,12 +129,6 @@ jobs:
         -ItemType Directory `
         -Force `
         "$env:TEMP_DRIVE\Karing"
-
-
-        New-Item `
-        -ItemType Directory `
-        -Force `
-        "$env:TEMP_DRIVE\Backup"
 
 
 
@@ -193,94 +160,6 @@ jobs:
         Invoke-WebRequest `
         -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" `
         -OutFile "$env:TEMP_DRIVE\Amirreza_Wallpaper.png"
-
-
-
-    # -----------------------------
-    # Backup
-    # -----------------------------
-    - name: Backup
-      shell: powershell
-      run: |
-
-        $backup = "$env:TEMP_DRIVE\Backup"
-
-
-        # Karing
-        Copy-Item `
-        "$env:TEMP_DRIVE\Karing" `
-        "$backup\Karing" `
-        -Recurse `
-        -Force
-
-
-        # Wallpapers
-        Copy-Item `
-        "$env:TEMP_DRIVE\Matin_Wallpaper.png" `
-        "$backup\Matin_Wallpaper.png" `
-        -Force
-
-
-        Copy-Item `
-        "$env:TEMP_DRIVE\Amirreza_Wallpaper.png" `
-        "$backup\Amirreza_Wallpaper.png" `
-        -Force
-
-
-        Copy-Item `
-        "$env:TEMP_DRIVE\Amirreza_Wallpaper.png" `
-        "$env:TEMP_DRIVE\Backup" `
-        -Force
-
-
-
-    # -----------------------------
-    # Install rclone
-    # -----------------------------
-    - name: Install rclone
-      shell: powershell
-      run: |
-
-        winget install rclone `
-        --accept-source-agreements `
-        --accept-package-agreements
-
-
-        rclone version
-
-
-
-    # -----------------------------
-    # Setup rclone
-    # -----------------------------
-    - name: Setup rclone
-      shell: powershell
-      run: |
-
-        New-Item `
-        -ItemType Directory `
-        -Force `
-        "$env:USERPROFILE\.config\rclone"
-
-
-        Set-Content `
-        "$env:USERPROFILE\.config\rclone\rclone.conf" `
-        '${{ secrets.RCLONE_CONFIG }}'
-
-
-
-    # -----------------------------
-    # Upload Backup
-    # -----------------------------
-    - name: Upload Backup
-      shell: powershell
-      run: |
-
-        rclone copy `
-        "$env:TEMP_DRIVE\Backup" `
-        gdrive:SilkByte/Backup `
-        --progress
-
 
 
     # -----------------------------
