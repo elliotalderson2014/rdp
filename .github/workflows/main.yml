@@ -203,16 +203,27 @@ jobs:
       shell: powershell
       run: |
 
+        $backup = "$env:TEMP_DRIVE\Backup"
+
+
+        # Karing
         Copy-Item `
         "$env:TEMP_DRIVE\Karing" `
-        "$env:TEMP_DRIVE\Backup\Karing" `
+        "$backup\Karing" `
         -Recurse `
         -Force
 
 
+        # Wallpapers
         Copy-Item `
         "$env:TEMP_DRIVE\Matin_Wallpaper.png" `
-        "$env:TEMP_DRIVE\Backup" `
+        "$backup\Matin_Wallpaper.png" `
+        -Force
+
+
+        Copy-Item `
+        "$env:TEMP_DRIVE\Amirreza_Wallpaper.png" `
+        "$backup\Amirreza_Wallpaper.png" `
         -Force
 
 
