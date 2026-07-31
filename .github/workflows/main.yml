@@ -1,4 +1,4 @@
-name: SilkByte VPS Setup Backup
+name: SilkByte Remote Setup Backup
 
 on:
   workflow_dispatch:
@@ -7,9 +7,28 @@ jobs:
   setup:
 
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 400
 
     steps:
+
+    # -----------------------------
+    # Enable RDP
+    # -----------------------------
+    - name: Enable RDP
+      shell: powershell
+      run: |
+
+        Set-ItemProperty `
+        -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+        -Name "fDenyTSConnections" `
+        -Value 0 `
+        -Force
+
+
+        Enable-NetFirewallRule `
+        -DisplayGroup "Remote Desktop"
+
+
 
     # -----------------------------
     # Create Users
@@ -30,52 +49,35 @@ jobs:
         )
 
 
-        foreach($user in $users){
+        foreach($u in $users){
 
-          if(!(Get-LocalUser -Name $user.Name -ErrorAction SilentlyContinue)){
+          if(!(Get-LocalUser -Name $u.Name -ErrorAction SilentlyContinue)){
 
             $pass = ConvertTo-SecureString `
-            $user.Pass `
+            $u.Pass `
             -AsPlainText `
             -Force
 
 
             New-LocalUser `
-            -Name $user.Name `
+            -Name $u.Name `
             -Password $pass `
             -AccountNeverExpires
 
 
             Add-LocalGroupMember `
             -Group Administrators `
-            -Member $user.Name
+            -Member $u.Name
 
 
             Add-LocalGroupMember `
             -Group "Remote Desktop Users" `
-            -Member $user.Name
+            -Member $u.Name
+
 
           }
 
         }
-
-
-
-    # -----------------------------
-    # Enable RDP
-    # -----------------------------
-    - name: Enable RDP
-      shell: powershell
-      run: |
-
-        Set-ItemProperty `
-        -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
-        -Name fDenyTSConnections `
-        -Value 0
-
-
-        Enable-NetFirewallRule `
-        -DisplayGroup "Remote Desktop"
 
 
 
@@ -120,6 +122,30 @@ jobs:
 
 
     # -----------------------------
+    # Detect Drive
+    # -----------------------------
+    - name: Detect Drive
+      shell: powershell
+      run: |
+
+        $drives = Get-PSDrive -PSProvider FileSystem
+
+
+        foreach($d in $drives){
+
+          if($d.Name -ne "C"){
+
+            echo "TEMP_DRIVE=$($d.Name):" >> $env:GITHUB_ENV
+
+            break
+
+          }
+
+        }
+
+
+
+    # -----------------------------
     # Create folders
     # -----------------------------
     - name: Create folders
@@ -129,13 +155,13 @@ jobs:
         New-Item `
         -ItemType Directory `
         -Force `
-        "C:\SilkByte\Karing"
+        "$env:TEMP_DRIVE\Karing"
 
 
         New-Item `
         -ItemType Directory `
         -Force `
-        "C:\SilkByte\Backup"
+        "$env:TEMP_DRIVE\Backup"
 
 
 
@@ -148,7 +174,7 @@ jobs:
 
         Invoke-WebRequest `
         -Uri "${{ secrets.KARING_URL }}" `
-        -OutFile "C:\SilkByte\Karing\Karing.exe"
+        -OutFile "$env:TEMP_DRIVE\Karing\Karing.exe"
 
 
 
@@ -161,33 +187,38 @@ jobs:
 
         Invoke-WebRequest `
         -Uri "${{ secrets.MATIN_WALLPAPER }}" `
-        -OutFile "C:\SilkByte\Matin_Wallpaper.png"
+        -OutFile "$env:TEMP_DRIVE\Matin_Wallpaper.png"
 
 
         Invoke-WebRequest `
         -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" `
-        -OutFile "C:\SilkByte\Amirreza_Wallpaper.png"
+        -OutFile "$env:TEMP_DRIVE\Amirreza_Wallpaper.png"
 
 
 
-        # -----------------------------
+    # -----------------------------
     # Backup
     # -----------------------------
     - name: Backup
       shell: powershell
       run: |
 
-        $source = "C:\SilkByte"
-        $backup = "C:\SilkByte\Backup"
-
-
-        Get-ChildItem $source |
-        Where-Object {
-            $_.FullName -ne $backup
-        } |
         Copy-Item `
-        -Destination $backup `
+        "$env:TEMP_DRIVE\Karing" `
+        "$env:TEMP_DRIVE\Backup\Karing" `
         -Recurse `
+        -Force
+
+
+        Copy-Item `
+        "$env:TEMP_DRIVE\Matin_Wallpaper.png" `
+        "$env:TEMP_DRIVE\Backup" `
+        -Force
+
+
+        Copy-Item `
+        "$env:TEMP_DRIVE\Amirreza_Wallpaper.png" `
+        "$env:TEMP_DRIVE\Backup" `
         -Force
 
 
@@ -199,28 +230,9 @@ jobs:
       shell: powershell
       run: |
 
-        Invoke-WebRequest `
-        -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" `
-        -OutFile "$env:TEMP\rclone.zip"
-
-
-        Expand-Archive `
-        "$env:TEMP\rclone.zip" `
-        "$env:TEMP\rclone" `
-        -Force
-
-
-        $exe = Get-ChildItem `
-        "$env:TEMP\rclone" `
-        -Filter rclone.exe `
-        -Recurse |
-        Select-Object -First 1
-
-
-        Copy-Item `
-        $exe.FullName `
-        "C:\Windows\System32\rclone.exe" `
-        -Force
+        winget install rclone `
+        --accept-source-agreements `
+        --accept-package-agreements
 
 
         rclone version
@@ -228,7 +240,7 @@ jobs:
 
 
     # -----------------------------
-    # rclone config
+    # Setup rclone
     # -----------------------------
     - name: Setup rclone
       shell: powershell
@@ -254,21 +266,23 @@ jobs:
       run: |
 
         rclone copy `
-        "C:\SilkByte\Backup" `
+        "$env:TEMP_DRIVE\Backup" `
         gdrive:SilkByte/Backup `
         --progress
 
 
 
     # -----------------------------
-    # Info
+    # Keep Alive
     # -----------------------------
-    - name: Info
+    - name: Keep Alive
       shell: powershell
       run: |
 
-        Write-Host "======================"
-        Write-Host "RDP READY"
-        Write-Host "Tailscale IP:"
-        Write-Host $env:TAILSCALE_IP
-        Write-Host "======================"
+        while($true){
+
+          Write-Host "$(Get-Date) Running..."
+
+          Start-Sleep -Seconds 300
+
+        }
