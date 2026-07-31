@@ -1,4 +1,4 @@
-name: SilkByte Self Hosted Remote Setup
+name: SilkByte Self Hosted RDP Setup
 
 on:
   workflow_dispatch:
@@ -11,6 +11,9 @@ jobs:
 
     steps:
 
+    # -----------------------------
+    # Enable RDP
+    # -----------------------------
     - name: Enable RDP
       shell: powershell
       run: |
@@ -18,63 +21,94 @@ jobs:
         Set-ItemProperty `
         -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
         -Name "fDenyTSConnections" `
-        -Value 0
+        -Value 0 `
+        -Force
 
 
         Enable-NetFirewallRule `
         -DisplayGroup "Remote Desktop"
 
 
+        Restart-Service TermService -Force
 
-    - name: Create User
+
+
+    # -----------------------------
+    # Create Users
+    # -----------------------------
+    - name: Create Matin And Amirreza Users
       shell: powershell
       run: |
 
-        $username="${{ secrets.MATIN_USER }}"
-        $password="${{ secrets.MATIN_PASS }}"
+        $users = @(
+            @{
+                Username="${{ secrets.MATIN_USER }}"
+                Password="${{ secrets.MATIN_PASS }}"
+            },
+            @{
+                Username="${{ secrets.AMIRREZA_USER }}"
+                Password="${{ secrets.AMIRREZA_PASS }}"
+            }
+        )
 
 
-        if(Get-LocalUser -Name $username -ErrorAction SilentlyContinue){
+        foreach ($user in $users) {
 
-          Write-Host "User exists"
+
+            if(Get-LocalUser -Name $user.Username -ErrorAction SilentlyContinue){
+
+                Write-Host "User already exists: $($user.Username)"
+
+            }
+
+            else {
+
+
+                $securePassword = ConvertTo-SecureString `
+                $user.Password `
+                -AsPlainText `
+                -Force
+
+
+                New-LocalUser `
+                -Name $user.Username `
+                -Password $securePassword `
+                -AccountNeverExpires
+
+
+                Add-LocalGroupMember `
+                -Group "Administrators" `
+                -Member $user.Username
+
+
+                Add-LocalGroupMember `
+                -Group "Remote Desktop Users" `
+                -Member $user.Username
+
+
+                Write-Host "Created: $($user.Username)"
+
+            }
 
         }
-        else{
-
-          $secure = ConvertTo-SecureString `
-          $password `
-          -AsPlainText `
-          -Force
-
-
-          New-LocalUser `
-          -Name $username `
-          -Password $secure `
-          -AccountNeverExpires
-
-
-          Add-LocalGroupMember `
-          -Group "Remote Desktop Users" `
-          -Member $username
-
-
-          Add-LocalGroupMember `
-          -Group "Administrators" `
-          -Member $username
-
-        }
 
 
 
+    # -----------------------------
+    # Install Tailscale
+    # -----------------------------
     - name: Install Tailscale
       shell: powershell
       run: |
 
-        $url="https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+
+        $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+
 
         Invoke-WebRequest `
         -Uri $url `
         -OutFile "$env:TEMP\tailscale.msi"
+
 
 
         Start-Process `
@@ -84,31 +118,45 @@ jobs:
 
 
 
+    # -----------------------------
+    # Connect Tailscale
+    # -----------------------------
     - name: Connect Tailscale
       shell: powershell
       run: |
+
 
         & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
         --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
 
 
-        $ip=& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
+        $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
 
 
         echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
 
 
+
+        Write-Host "================================"
         Write-Host "Tailscale IP: $ip"
+        Write-Host "================================"
 
 
 
+    # -----------------------------
+    # Download Wallpapers
+    # -----------------------------
     - name: Download Wallpapers
       shell: powershell
       run: |
 
+
         Invoke-WebRequest `
         -Uri "${{ secrets.MATIN_WALLPAPER }}" `
         -OutFile "C:\Users\Public\Desktop\Matin_Wallpaper.png"
+
 
 
         Invoke-WebRequest `
@@ -117,12 +165,13 @@ jobs:
 
 
 
-    - name: Finish
+    # -----------------------------
+    # Finish
+    # -----------------------------
+    - name: Complete
       shell: powershell
       run: |
 
-        Write-Host "======================"
-        Write-Host "RDP READY"
-        Write-Host "Tailscale IP:"
-        Write-Host $env:TAILSCALE_IP
-        Write-Host "======================"
+        Write-Host "============================="
+        Write-Host " RDP Setup Completed "
+        Write-Host "============================="
