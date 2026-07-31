@@ -1,167 +1,199 @@
-name: SilkByte Self Hosted RDP Setup
+name: SilkByte VPS Setup & Backup
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup:
+  setup-and-backup:
 
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
 
     # -----------------------------
-    # Enable RDP
+    # Detect Temp Drive
     # -----------------------------
-    - name: Enable RDP
+    - name: Detect Temp Drive
       shell: powershell
       run: |
 
-        Set-ItemProperty `
-        -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
-        -Name "fDenyTSConnections" `
-        -Value 0 `
-        -Force
+        $drives = Get-PSDrive -PSProvider FileSystem
+
+        foreach ($drive in $drives) {
+
+          if ($drive.Name -ne "C") {
+
+            echo "TEMP_DRIVE=$($drive.Name):" >> $env:GITHUB_ENV
+
+            Write-Host "Temp Drive Found: $($drive.Name):"
+
+            break
+          }
+        }
 
 
-        Enable-NetFirewallRule `
-        -DisplayGroup "Remote Desktop"
+    # -----------------------------
+    # Create folders
+    # -----------------------------
+    - name: Create folders
+      shell: powershell
+      run: |
+
+        New-Item `
+        -ItemType Directory `
+        -Force `
+        "$env:TEMP_DRIVE\Karing"
 
 
-        Restart-Service TermService -Force
+        New-Item `
+        -ItemType Directory `
+        -Force `
+        "$env:TEMP_DRIVE\Backup"
 
 
 
     # -----------------------------
     # Create Users
     # -----------------------------
-    - name: Create Matin And Amirreza Users
+    - name: Create Users
       shell: powershell
       run: |
 
         $users = @(
-            @{
-                Username="${{ secrets.MATIN_USER }}"
-                Password="${{ secrets.MATIN_PASS }}"
-            },
-            @{
-                Username="${{ secrets.AMIRREZA_USER }}"
-                Password="${{ secrets.AMIRREZA_PASS }}"
-            }
+          @{
+            Name="${{ secrets.MATIN_USER }}"
+            Pass="${{ secrets.MATIN_PASS }}"
+          },
+          @{
+            Name="${{ secrets.AMIRREZA_USER }}"
+            Pass="${{ secrets.AMIRREZA_PASS }}"
+          }
         )
 
 
-        foreach ($user in $users) {
+        foreach($user in $users){
+
+          if(!(Get-LocalUser -Name $user.Name -ErrorAction SilentlyContinue)){
 
 
-            if(Get-LocalUser -Name $user.Username -ErrorAction SilentlyContinue){
-
-                Write-Host "User already exists: $($user.Username)"
-
-            }
-
-            else {
+            $password = ConvertTo-SecureString `
+            $user.Pass `
+            -AsPlainText `
+            -Force
 
 
-                $securePassword = ConvertTo-SecureString `
-                $user.Password `
-                -AsPlainText `
-                -Force
+            New-LocalUser `
+            -Name $user.Name `
+            -Password $password `
+            -AccountNeverExpires
 
 
-                New-LocalUser `
-                -Name $user.Username `
-                -Password $securePassword `
-                -AccountNeverExpires
+            Write-Host "Created: $($user.Name)"
 
+          }
 
-                Add-LocalGroupMember `
-                -Group "Administrators" `
-                -Member $user.Username
+          else {
 
+            Write-Host "Exists: $($user.Name)"
 
-                Add-LocalGroupMember `
-                -Group "Remote Desktop Users" `
-                -Member $user.Username
-
-
-                Write-Host "Created: $($user.Username)"
-
-            }
+          }
 
         }
 
 
 
     # -----------------------------
-    # Install Tailscale
+    # Download Karing
     # -----------------------------
-    - name: Install Tailscale
+    - name: Download Karing
       shell: powershell
       run: |
-
-
-        $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-
 
         Invoke-WebRequest `
-        -Uri $url `
-        -OutFile "$env:TEMP\tailscale.msi"
-
-
-
-        Start-Process `
-        msiexec.exe `
-        -ArgumentList "/i $env:TEMP\tailscale.msi /quiet /norestart" `
-        -Wait
+        -Uri "${{ secrets.KARING_URL }}" `
+        -OutFile "$env:TEMP_DRIVE\Karing\Karing.exe"
 
 
 
     # -----------------------------
-    # Connect Tailscale
-    # -----------------------------
-    - name: Connect Tailscale
-      shell: powershell
-      run: |
-
-
-        & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
-        --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
-
-
-
-        $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-
-
-
-        echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
-
-
-
-        Write-Host "================================"
-        Write-Host "Tailscale IP: $ip"
-        Write-Host "================================"
-
-
-
-    # -----------------------------
-    # Download Wallpapers
+    # Wallpapers
     # -----------------------------
     - name: Download Wallpapers
       shell: powershell
       run: |
 
-
         Invoke-WebRequest `
         -Uri "${{ secrets.MATIN_WALLPAPER }}" `
-        -OutFile "C:\Users\Public\Desktop\Matin_Wallpaper.png"
-
+        -OutFile "$env:TEMP_DRIVE\Matin_Wallpaper.png"
 
 
         Invoke-WebRequest `
         -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" `
-        -OutFile "C:\Users\Public\Desktop\Amirreza_Wallpaper.png"
+        -OutFile "$env:TEMP_DRIVE\Amirreza_Wallpaper.png"
+
+
+
+    # -----------------------------
+    # Backup
+    # -----------------------------
+    - name: Create Backup
+      shell: powershell
+      run: |
+
+        $backup="$env:TEMP_DRIVE\Backup"
+
+
+        Copy-Item `
+        "$env:TEMP_DRIVE\Karing" `
+        "$backup\Karing" `
+        -Recurse `
+        -Force
+
+
+        Copy-Item `
+        "$env:TEMP_DRIVE\Matin_Wallpaper.png" `
+        "$backup\Matin_Wallpaper.png" `
+        -Force
+
+
+        Copy-Item `
+        "$env:TEMP_DRIVE\Amirreza_Wallpaper.png" `
+        "$backup\Amirreza_Wallpaper.png" `
+        -Force
+
+
+
+    # -----------------------------
+    # Setup rclone
+    # -----------------------------
+    - name: Setup rclone
+      shell: powershell
+      run: |
+
+        New-Item `
+        -ItemType Directory `
+        -Force `
+        "$env:USERPROFILE\.config\rclone"
+
+
+        Set-Content `
+        "$env:USERPROFILE\.config\rclone\rclone.conf" `
+        '${{ secrets.RCLONE_CONFIG }}'
+
+
+
+    # -----------------------------
+    # Upload Google Drive
+    # -----------------------------
+    - name: Upload Google Drive
+      shell: powershell
+      run: |
+
+        rclone copy `
+        "$env:TEMP_DRIVE\Backup" `
+        gdrive:SilkByte/Backup `
+        --progress
 
 
 
@@ -172,6 +204,6 @@ jobs:
       shell: powershell
       run: |
 
-        Write-Host "============================="
-        Write-Host " RDP Setup Completed "
-        Write-Host "============================="
+        Write-Host "=========================="
+        Write-Host "SilkByte Backup Completed"
+        Write-Host "=========================="
