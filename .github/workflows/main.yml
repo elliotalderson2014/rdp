@@ -1,57 +1,15 @@
-name: SilkByte VPS Setup & Backup
+name: SilkByte VPS Setup Backup
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-and-backup:
+  setup:
 
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
 
     steps:
-
-    # -----------------------------
-    # Detect Temp Drive
-    # -----------------------------
-    - name: Detect Temp Drive
-      shell: powershell
-      run: |
-
-        $drives = Get-PSDrive -PSProvider FileSystem
-
-        foreach ($drive in $drives) {
-
-          if ($drive.Name -ne "C") {
-
-            echo "TEMP_DRIVE=$($drive.Name):" >> $env:GITHUB_ENV
-
-            Write-Host "Temp Drive Found: $($drive.Name):"
-
-            break
-          }
-        }
-
-
-    # -----------------------------
-    # Create folders
-    # -----------------------------
-    - name: Create folders
-      shell: powershell
-      run: |
-
-        New-Item `
-        -ItemType Directory `
-        -Force `
-        "$env:TEMP_DRIVE\Karing"
-
-
-        New-Item `
-        -ItemType Directory `
-        -Force `
-        "$env:TEMP_DRIVE\Backup"
-
-
 
     # -----------------------------
     # Create Users
@@ -76,8 +34,7 @@ jobs:
 
           if(!(Get-LocalUser -Name $user.Name -ErrorAction SilentlyContinue)){
 
-
-            $password = ConvertTo-SecureString `
+            $pass = ConvertTo-SecureString `
             $user.Pass `
             -AsPlainText `
             -Force
@@ -85,20 +42,100 @@ jobs:
 
             New-LocalUser `
             -Name $user.Name `
-            -Password $password `
+            -Password $pass `
             -AccountNeverExpires
 
 
-            Write-Host "Created user: $($user.Name)"
+            Add-LocalGroupMember `
+            -Group Administrators `
+            -Member $user.Name
 
-          }
-          else {
 
-            Write-Host "User exists: $($user.Name)"
+            Add-LocalGroupMember `
+            -Group "Remote Desktop Users" `
+            -Member $user.Name
 
           }
 
         }
+
+
+
+    # -----------------------------
+    # Enable RDP
+    # -----------------------------
+    - name: Enable RDP
+      shell: powershell
+      run: |
+
+        Set-ItemProperty `
+        -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+        -Name fDenyTSConnections `
+        -Value 0
+
+
+        Enable-NetFirewallRule `
+        -DisplayGroup "Remote Desktop"
+
+
+
+    # -----------------------------
+    # Install Tailscale
+    # -----------------------------
+    - name: Install Tailscale
+      shell: powershell
+      run: |
+
+        Invoke-WebRequest `
+        -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" `
+        -OutFile "$env:TEMP\tailscale.msi"
+
+
+        Start-Process `
+        msiexec.exe `
+        -ArgumentList "/i $env:TEMP\tailscale.msi /quiet /norestart" `
+        -Wait
+
+
+
+    # -----------------------------
+    # Connect Tailscale
+    # -----------------------------
+    - name: Connect Tailscale
+      shell: powershell
+      run: |
+
+        & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+        --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}"
+
+
+        $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
+
+        echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+
+
+        Write-Host "Tailscale IP: $ip"
+
+
+
+    # -----------------------------
+    # Create folders
+    # -----------------------------
+    - name: Create folders
+      shell: powershell
+      run: |
+
+        New-Item `
+        -ItemType Directory `
+        -Force `
+        "C:\SilkByte\Karing"
+
+
+        New-Item `
+        -ItemType Directory `
+        -Force `
+        "C:\SilkByte\Backup"
 
 
 
@@ -111,12 +148,12 @@ jobs:
 
         Invoke-WebRequest `
         -Uri "${{ secrets.KARING_URL }}" `
-        -OutFile "$env:TEMP_DRIVE\Karing\Karing.exe"
+        -OutFile "C:\SilkByte\Karing\Karing.exe"
 
 
 
     # -----------------------------
-    # Download Wallpapers
+    # Wallpapers
     # -----------------------------
     - name: Download Wallpapers
       shell: powershell
@@ -124,41 +161,26 @@ jobs:
 
         Invoke-WebRequest `
         -Uri "${{ secrets.MATIN_WALLPAPER }}" `
-        -OutFile "$env:TEMP_DRIVE\Matin_Wallpaper.png"
+        -OutFile "C:\SilkByte\Matin_Wallpaper.png"
 
 
         Invoke-WebRequest `
         -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" `
-        -OutFile "$env:TEMP_DRIVE\Amirreza_Wallpaper.png"
+        -OutFile "C:\SilkByte\Amirreza_Wallpaper.png"
 
 
 
     # -----------------------------
-    # Create Backup
+    # Backup
     # -----------------------------
-    - name: Create Backup
+    - name: Backup
       shell: powershell
       run: |
 
-        $backup="$env:TEMP_DRIVE\Backup"
-
-
         Copy-Item `
-        "$env:TEMP_DRIVE\Karing" `
-        "$backup\Karing" `
+        "C:\SilkByte\*" `
+        "C:\SilkByte\Backup" `
         -Recurse `
-        -Force
-
-
-        Copy-Item `
-        "$env:TEMP_DRIVE\Matin_Wallpaper.png" `
-        "$backup\Matin_Wallpaper.png" `
-        -Force
-
-
-        Copy-Item `
-        "$env:TEMP_DRIVE\Amirreza_Wallpaper.png" `
-        "$backup\Amirreza_Wallpaper.png" `
         -Force
 
 
@@ -170,17 +192,14 @@ jobs:
       shell: powershell
       run: |
 
-        $url = "https://downloads.rclone.org/rclone-current-windows-amd64.zip"
-
-
         Invoke-WebRequest `
-        -Uri $url `
+        -Uri "https://downloads.rclone.org/rclone-current-windows-amd64.zip" `
         -OutFile "$env:TEMP\rclone.zip"
 
 
         Expand-Archive `
         "$env:TEMP\rclone.zip" `
-        -DestinationPath "$env:TEMP\rclone" `
+        "$env:TEMP\rclone" `
         -Force
 
 
@@ -202,7 +221,7 @@ jobs:
 
 
     # -----------------------------
-    # Setup rclone config
+    # rclone config
     # -----------------------------
     - name: Setup rclone
       shell: powershell
@@ -221,26 +240,28 @@ jobs:
 
 
     # -----------------------------
-    # Upload Google Drive
+    # Upload Backup
     # -----------------------------
-    - name: Upload Google Drive
+    - name: Upload Backup
       shell: powershell
       run: |
 
         rclone copy `
-        "$env:TEMP_DRIVE\Backup" `
+        "C:\SilkByte\Backup" `
         gdrive:SilkByte/Backup `
         --progress
 
 
 
     # -----------------------------
-    # Complete
+    # Info
     # -----------------------------
-    - name: Complete
+    - name: Info
       shell: powershell
       run: |
 
-        Write-Host "=============================="
-        Write-Host " SilkByte Backup Completed "
-        Write-Host "=============================="
+        Write-Host "======================"
+        Write-Host "RDP READY"
+        Write-Host "Tailscale IP:"
+        Write-Host $env:TAILSCALE_IP
+        Write-Host "======================"
