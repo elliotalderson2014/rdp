@@ -6,7 +6,7 @@ on:
 jobs:
   setup-and-backup:
 
-    runs-on: windows-latest
+    runs-on: self-hosted
     timeout-minutes: 120
 
     steps:
@@ -89,13 +89,12 @@ jobs:
             -AccountNeverExpires
 
 
-            Write-Host "Created: $($user.Name)"
+            Write-Host "Created user: $($user.Name)"
 
           }
-
           else {
 
-            Write-Host "Exists: $($user.Name)"
+            Write-Host "User exists: $($user.Name)"
 
           }
 
@@ -117,7 +116,7 @@ jobs:
 
 
     # -----------------------------
-    # Wallpapers
+    # Download Wallpapers
     # -----------------------------
     - name: Download Wallpapers
       shell: powershell
@@ -135,7 +134,7 @@ jobs:
 
 
     # -----------------------------
-    # Backup
+    # Create Backup
     # -----------------------------
     - name: Create Backup
       shell: powershell
@@ -165,7 +164,45 @@ jobs:
 
 
     # -----------------------------
-    # Setup rclone
+    # Install rclone
+    # -----------------------------
+    - name: Install rclone
+      shell: powershell
+      run: |
+
+        $url = "https://downloads.rclone.org/rclone-current-windows-amd64.zip"
+
+
+        Invoke-WebRequest `
+        -Uri $url `
+        -OutFile "$env:TEMP\rclone.zip"
+
+
+        Expand-Archive `
+        "$env:TEMP\rclone.zip" `
+        -DestinationPath "$env:TEMP\rclone" `
+        -Force
+
+
+        $exe = Get-ChildItem `
+        "$env:TEMP\rclone" `
+        -Filter rclone.exe `
+        -Recurse |
+        Select-Object -First 1
+
+
+        Copy-Item `
+        $exe.FullName `
+        "C:\Windows\System32\rclone.exe" `
+        -Force
+
+
+        rclone version
+
+
+
+    # -----------------------------
+    # Setup rclone config
     # -----------------------------
     - name: Setup rclone
       shell: powershell
@@ -198,12 +235,12 @@ jobs:
 
 
     # -----------------------------
-    # Finish
+    # Complete
     # -----------------------------
     - name: Complete
       shell: powershell
       run: |
 
-        Write-Host "=========================="
-        Write-Host "SilkByte Backup Completed"
-        Write-Host "=========================="
+        Write-Host "=============================="
+        Write-Host " SilkByte Backup Completed "
+        Write-Host "=============================="
