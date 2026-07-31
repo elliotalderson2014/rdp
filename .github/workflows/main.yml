@@ -114,7 +114,7 @@ jobs:
         $ip = (& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4).Trim()
 
 
-        $message = "🖥 SilkByte Runner Online`n`n🔗 Tailscale IP: $ip`n`n⏰ Time: $(Get-Date)"
+        $message = "SilkByte Runner Online`n`nTailscale IP: $ip`n`nTime: $(Get-Date)"
 
 
         Invoke-RestMethod `
