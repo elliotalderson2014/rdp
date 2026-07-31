@@ -170,16 +170,23 @@ jobs:
 
 
 
-    # -----------------------------
+        # -----------------------------
     # Backup
     # -----------------------------
     - name: Backup
       shell: powershell
       run: |
 
+        $source = "C:\SilkByte"
+        $backup = "C:\SilkByte\Backup"
+
+
+        Get-ChildItem $source |
+        Where-Object {
+            $_.FullName -ne $backup
+        } |
         Copy-Item `
-        "C:\SilkByte\*" `
-        "C:\SilkByte\Backup" `
+        -Destination $backup `
         -Recurse `
         -Force
 
