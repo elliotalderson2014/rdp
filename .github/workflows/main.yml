@@ -1,0 +1,128 @@
+name: SilkByte Self Hosted Remote Setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+
+    runs-on: self-hosted
+    timeout-minutes: 60
+
+    steps:
+
+    - name: Enable RDP
+      shell: powershell
+      run: |
+
+        Set-ItemProperty `
+        -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+        -Name "fDenyTSConnections" `
+        -Value 0
+
+
+        Enable-NetFirewallRule `
+        -DisplayGroup "Remote Desktop"
+
+
+
+    - name: Create User
+      shell: powershell
+      run: |
+
+        $username="${{ secrets.MATIN_USER }}"
+        $password="${{ secrets.MATIN_PASS }}"
+
+
+        if(Get-LocalUser -Name $username -ErrorAction SilentlyContinue){
+
+          Write-Host "User exists"
+
+        }
+        else{
+
+          $secure = ConvertTo-SecureString `
+          $password `
+          -AsPlainText `
+          -Force
+
+
+          New-LocalUser `
+          -Name $username `
+          -Password $secure `
+          -AccountNeverExpires
+
+
+          Add-LocalGroupMember `
+          -Group "Remote Desktop Users" `
+          -Member $username
+
+
+          Add-LocalGroupMember `
+          -Group "Administrators" `
+          -Member $username
+
+        }
+
+
+
+    - name: Install Tailscale
+      shell: powershell
+      run: |
+
+        $url="https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+
+        Invoke-WebRequest `
+        -Uri $url `
+        -OutFile "$env:TEMP\tailscale.msi"
+
+
+        Start-Process `
+        msiexec.exe `
+        -ArgumentList "/i $env:TEMP\tailscale.msi /quiet /norestart" `
+        -Wait
+
+
+
+    - name: Connect Tailscale
+      shell: powershell
+      run: |
+
+        & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+        --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
+
+
+        $ip=& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
+
+        echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+
+
+        Write-Host "Tailscale IP: $ip"
+
+
+
+    - name: Download Wallpapers
+      shell: powershell
+      run: |
+
+        Invoke-WebRequest `
+        -Uri "${{ secrets.MATIN_WALLPAPER }}" `
+        -OutFile "C:\Users\Public\Desktop\Matin_Wallpaper.png"
+
+
+        Invoke-WebRequest `
+        -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" `
+        -OutFile "C:\Users\Public\Desktop\Amirreza_Wallpaper.png"
+
+
+
+    - name: Finish
+      shell: powershell
+      run: |
+
+        Write-Host "======================"
+        Write-Host "RDP READY"
+        Write-Host "Tailscale IP:"
+        Write-Host $env:TAILSCALE_IP
+        Write-Host "======================"
