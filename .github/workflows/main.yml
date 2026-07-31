@@ -111,10 +111,27 @@ jobs:
         --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}"
 
 
-        $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+        $ip = (& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4).Trim()
 
 
-        echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+        $message = @"
+🖥 SilkByte Runner Online
+
+🔗 Tailscale IP:
+$ip
+
+⏰ Time:
+$(Get-Date)
+"@
+
+
+        Invoke-RestMethod `
+        -Uri "https://api.telegram.org/bot${{ secrets.TOKEN }}/sendMessage" `
+        -Method Post `
+        -Body @{
+            chat_id = "${{ secrets.ID }}"
+            text = $message
+        } | Out-Null
 
 
 
@@ -129,19 +146,6 @@ jobs:
         -ItemType Directory `
         -Force `
         "$env:TEMP_DRIVE\Karing"
-
-
-
-    # -----------------------------
-    # Download Karing
-    # -----------------------------
-    - name: Download Karing
-      shell: powershell
-      run: |
-
-        Invoke-WebRequest `
-        -Uri "${{ secrets.KARING_URL }}" `
-        -OutFile "$env:TEMP_DRIVE\Karing\Karing.exe"
 
 
 
