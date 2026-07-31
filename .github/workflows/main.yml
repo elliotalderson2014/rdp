@@ -114,15 +114,7 @@ jobs:
         $ip = (& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4).Trim()
 
 
-        $message = @"
-🖥 SilkByte Runner Online
-
-🔗 Tailscale IP:
-$ip
-
-⏰ Time:
-$(Get-Date)
-"@
+        $message = "🖥 SilkByte Runner Online`n`n🔗 Tailscale IP: $ip`n`n⏰ Time: $(Get-Date)"
 
 
         Invoke-RestMethod `
@@ -132,6 +124,9 @@ $(Get-Date)
             chat_id = "${{ secrets.ID }}"
             text = $message
         } | Out-Null
+
+
+        echo "Tailscale connected successfully"
 
 
 
