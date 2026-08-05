@@ -112,16 +112,16 @@ jobs:
         }
 
         # ----------------------------------------------------
-        # انتظار ۹۰ ثانیه‌ای برای باز کردن لینک و لاگین شما
+        # انتظار ۳۵ ثانیه‌ای برای باز کردن لینک و لاگین شما
         # ----------------------------------------------------
-        Write-Host "Waiting 90 seconds for manual login..."
-        Start-Sleep -Seconds 90
+        Write-Host "Waiting 35 seconds for manual login..."
+        Start-Sleep -Seconds 35
 
         # دریافت و چک کردن آی‌پی پس از زمان انتظار
         $authenticated = $false
         $retryCount = 0
 
-        while (-not $authenticated -and $retryCount -lt 12) {
+        while (-not $authenticated -and $retryCount -lt 18) {
             $ipOutput = cmd.exe /c "`"$tailscalePath`" ip -4 2>&1"
             
             if ($ipOutput -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
@@ -129,7 +129,7 @@ jobs:
                 $authenticated = $true
             } else {
                 $retryCount++
-                Write-Host "Waiting for connection... Retry ($retryCount/12)"
+                Write-Host "Waiting for connection... Retry ($retryCount/18)"
                 Start-Sleep -Seconds 5
             }
         }
@@ -173,34 +173,39 @@ jobs:
         $matinUser = "${{ secrets.MATIN_USER }}"
         $amirrezaUser = "${{ secrets.AMIRREZA_USER }}"
 
-        $matinPath = "C:\Users\$matinUser\Matin_Wallpaper.png"
-        $amirrezaPath = "C:\Users\$amirrezaUser\Amirreza_Wallpaper.png"
+        # مسیر عمومی دانلود تصاویر
+        $publicDir = "C:\PublicWallpapers"
+        New-Item -ItemType Directory -Force $publicDir | Out-Null
 
-        New-Item -ItemType Directory -Force "C:\Users\$matinUser" | Out-Null
-        New-Item -ItemType Directory -Force "C:\Users\$amirrezaUser" | Out-Null
+        $matinPath = "$publicDir\Matin_Wallpaper.png"
+        $amirrezaPath = "$publicDir\Amirreza_Wallpaper.png"
 
         Invoke-WebRequest -Uri "${{ secrets.MATIN_WALLPAPER }}" -OutFile $matinPath
         Invoke-WebRequest -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" -OutFile $amirrezaPath
 
-        $usersToSet = @(
-            @{ Name = $matinUser; Path = $matinPath },
-            @{ Name = $amirrezaUser; Path = $amirrezaPath }
-        )
+        # گرفتن اسکریپت از GitHub Secret
+        $wpScript = "${{ secrets.WALLPAPER_SCRIPT }}"
 
-        foreach ($u in $usersToSet) {
-            $userSid = (Get-LocalUser -Name $u.Name).SID.Value
-            
-            if (-not (Test-Path "HKU:\$userSid")) {
-                reg load "HKU\$userSid" "C:\Users\$($u.Name)\NTUSER.DAT" | Out-Null
-            }
+        Set-Content -Path "$publicDir\SetWP.ps1" -Value $wpScript -Force
 
-            $regDesktop = "Registry::HKU\$userSid\Control Panel\Desktop"
-            if (Test-Path $regDesktop) {
-                Set-ItemProperty -Path $regDesktop -Name Wallpaper -Value $u.Path
-                Set-ItemProperty -Path $regDesktop -Name WallpaperStyle -Value "10"
-                Set-ItemProperty -Path $regDesktop -Name TileWallpaper -Value "0"
-            }
+        # اطمینان از آزاد بودن Hive قبل از لود
+        if (Test-Path "Registry::HKU\DefaultUser") {
+            [gc]::Collect()
+            reg unload "HKU\DefaultUser" | Out-Null
         }
+
+        # بارگذاری Safe برای Default User
+        reg load "HKU\DefaultUser" "C:\Users\Default\NTUSER.DAT" | Out-Null
+        
+        $mCmd = "powershell -ExecutionPolicy Bypass -File C:\PublicWallpapers\SetWP.ps1 -ImgPath $matinPath"
+        $aCmd = "powershell -ExecutionPolicy Bypass -File C:\PublicWallpapers\SetWP.ps1 -ImgPath $amirrezaPath"
+
+        # ثبت دستور اجرا در اولین لاگین
+        Set-ItemProperty -Path "Registry::HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "SetMatinWallpaper" -Value $mCmd
+        Set-ItemProperty -Path "Registry::HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "SetAmirrezaWallpaper" -Value $aCmd
+
+        # آنلود کردن Hive
+        reg unload "HKU\DefaultUser" | Out-Null
 
     # -----------------------------
     # Keep Alive
