@@ -185,7 +185,6 @@ jobs:
 
         # گرفتن اسکریپت از GitHub Secret
         $wpScript = "${{ secrets.WALLPAPER_SCRIPT }}"
-
         Set-Content -Path "$publicDir\SetWP.ps1" -Value $wpScript -Force
 
         # اطمینان از آزاد بودن Hive قبل از لود
@@ -194,15 +193,21 @@ jobs:
             reg unload "HKU\DefaultUser" | Out-Null
         }
 
-        # بارگذاری Safe برای Default User
+        # بارگذاری Default User
         reg load "HKU\DefaultUser" "C:\Users\Default\NTUSER.DAT" | Out-Null
-        
+
+        # ✅ ساخت مسیر RunOnce اگر وجود نداشت
+        $runOncePath = "Registry::HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+        if (!(Test-Path $runOncePath)) {
+            New-Item -Path $runOncePath -Force | Out-Null
+        }
+
         $mCmd = "powershell -ExecutionPolicy Bypass -File C:\PublicWallpapers\SetWP.ps1 -ImgPath $matinPath"
         $aCmd = "powershell -ExecutionPolicy Bypass -File C:\PublicWallpapers\SetWP.ps1 -ImgPath $amirrezaPath"
 
         # ثبت دستور اجرا در اولین لاگین
-        Set-ItemProperty -Path "Registry::HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "SetMatinWallpaper" -Value $mCmd
-        Set-ItemProperty -Path "Registry::HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "SetAmirrezaWallpaper" -Value $aCmd
+        Set-ItemProperty -Path $runOncePath -Name "SetMatinWallpaper" -Value $mCmd
+        Set-ItemProperty -Path $runOncePath -Name "SetAmirrezaWallpaper" -Value $aCmd
 
         # آنلود کردن Hive
         reg unload "HKU\DefaultUser" | Out-Null
