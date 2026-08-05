@@ -173,7 +173,6 @@ jobs:
         $matinUser = "${{ secrets.MATIN_USER }}"
         $amirrezaUser = "${{ secrets.AMIRREZA_USER }}"
 
-        # مسیر عمومی دانلود تصاویر
         $publicDir = "C:\PublicWallpapers"
         New-Item -ItemType Directory -Force $publicDir | Out-Null
 
@@ -183,34 +182,44 @@ jobs:
         Invoke-WebRequest -Uri "${{ secrets.MATIN_WALLPAPER }}" -OutFile $matinPath
         Invoke-WebRequest -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" -OutFile $amirrezaPath
 
-        # گرفتن اسکریپت از GitHub Secret
+        # اسکریپت از Secret
         $wpScript = "${{ secrets.WALLPAPER_SCRIPT }}"
         Set-Content -Path "$publicDir\SetWP.ps1" -Value $wpScript -Force
 
-        # اطمینان از آزاد بودن Hive قبل از لود
-        if (Test-Path "Registry::HKU\DefaultUser") {
-            [gc]::Collect()
-            reg unload "HKU\DefaultUser" | Out-Null
-        }
+        # -----------------------------
+        # Task برای Matin
+        # -----------------------------
+        $actionM = New-ScheduledTaskAction `
+          -Execute "powershell.exe" `
+          -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\PublicWallpapers\SetWP.ps1 -ImgPath `"$matinPath`""
 
-        # بارگذاری Default User
-        reg load "HKU\DefaultUser" "C:\Users\Default\NTUSER.DAT" | Out-Null
+        $triggerM = New-ScheduledTaskTrigger -AtLogOn -User $matinUser
 
-        # ✅ ساخت مسیر RunOnce اگر وجود نداشت
-        $runOncePath = "Registry::HKU\DefaultUser\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-        if (!(Test-Path $runOncePath)) {
-            New-Item -Path $runOncePath -Force | Out-Null
-        }
+        Register-ScheduledTask `
+          -TaskName "SetWallpaper_Matin" `
+          -Action $actionM `
+          -Trigger $triggerM `
+          -User $matinUser `
+          -RunLevel Highest `
+          -Force | Out-Null
 
-        $mCmd = "powershell -ExecutionPolicy Bypass -File C:\PublicWallpapers\SetWP.ps1 -ImgPath $matinPath"
-        $aCmd = "powershell -ExecutionPolicy Bypass -File C:\PublicWallpapers\SetWP.ps1 -ImgPath $amirrezaPath"
 
-        # ثبت دستور اجرا در اولین لاگین
-        Set-ItemProperty -Path $runOncePath -Name "SetMatinWallpaper" -Value $mCmd
-        Set-ItemProperty -Path $runOncePath -Name "SetAmirrezaWallpaper" -Value $aCmd
+        # -----------------------------
+        # Task برای Amirreza
+        # -----------------------------
+        $actionA = New-ScheduledTaskAction `
+          -Execute "powershell.exe" `
+          -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\PublicWallpapers\SetWP.ps1 -ImgPath `"$amirrezaPath`""
 
-        # آنلود کردن Hive
-        reg unload "HKU\DefaultUser" | Out-Null
+        $triggerA = New-ScheduledTaskTrigger -AtLogOn -User $amirrezaUser
+
+        Register-ScheduledTask `
+          -TaskName "SetWallpaper_Amirreza" `
+          -Action $actionA `
+          -Trigger $triggerA `
+          -User $amirrezaUser `
+          -RunLevel Highest `
+          -Force | Out-Null
 
     # -----------------------------
     # Keep Alive
