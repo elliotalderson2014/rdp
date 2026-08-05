@@ -3,13 +3,17 @@ name: SilkByte Remote Setup Backup
 on:
   workflow_dispatch:
 
+
 jobs:
+
   setup:
 
     runs-on: windows-latest
     timeout-minutes: 400
 
+
     steps:
+
 
     # -----------------------------
     # Enable RDP
@@ -37,15 +41,18 @@ jobs:
       shell: powershell
       run: |
 
-        $users = @(
+        $users=@(
+
           @{
             Name="${{ secrets.MATIN_USER }}"
             Pass="${{ secrets.MATIN_PASS }}"
           },
+
           @{
             Name="${{ secrets.AMIRREZA_USER }}"
             Pass="${{ secrets.AMIRREZA_PASS }}"
           }
+
         )
 
 
@@ -53,10 +60,12 @@ jobs:
 
           if(!(Get-LocalUser -Name $u.Name -ErrorAction SilentlyContinue)){
 
-            $pass = ConvertTo-SecureString `
+
+            $pass=ConvertTo-SecureString `
             $u.Pass `
             -AsPlainText `
             -Force
+
 
 
             New-LocalUser `
@@ -65,19 +74,22 @@ jobs:
             -AccountNeverExpires
 
 
-            Add-LocalGroupMember `
-            -Group Administrators `
-            -Member $u.Name
-
 
             Add-LocalGroupMember `
-            -Group "Remote Desktop Users" `
-            -Member $u.Name
+            Administrators `
+            $u.Name
+
+
+
+            Add-LocalGroupMember `
+            "Remote Desktop Users" `
+            $u.Name
 
 
           }
 
         }
+
 
 
 
@@ -88,9 +100,11 @@ jobs:
       shell: powershell
       run: |
 
+
         Invoke-WebRequest `
         -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" `
         -OutFile "$env:TEMP\tailscale.msi"
+
 
 
         Start-Process `
@@ -100,77 +114,206 @@ jobs:
 
 
 
+
     # -----------------------------
-    # Connect Tailscale
+    # Connect Tailscale Login
     # -----------------------------
     - name: Connect Tailscale
       shell: powershell
       run: |
 
-        & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
-        --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}"
+
+        $tailscale="$env:ProgramFiles\Tailscale\tailscale.exe"
 
 
-        $ip = (& "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4).Trim()
+
+        $output=& $tailscale login 2>&1
 
 
-        $message = "SilkByte Runner Online`n`nTailscale IP: $ip`n`nTime: $(Get-Date)"
+
+        $url=[regex]::Match(
+        $output,
+        "https://login\.tailscale\.com/[^\s]+"
+        ).Value
 
 
-        Invoke-RestMethod `
-        -Uri "https://api.telegram.org/bot${{ secrets.TOKEN }}/sendMessage" `
-        -Method Post `
-        -Body @{
-            chat_id = "${{ secrets.ID }}"
-            text = $message
-        } | Out-Null
+
+        if($url){
 
 
-        echo "Tailscale connected successfully"
+          $copy=$url -replace "^https?://",""
+
+
+
+          $keyboard=@{
+
+            inline_keyboard=@(
+
+              @(
+
+                @{
+                  text="📋 Copy Login"
+                  copy_text=@{
+                    text=$copy
+                  }
+                }
+
+              )
+
+            )
+
+          }
+
+
+
+          $msg=@"
+
+🔐 SilkByte Tailscale Login
+
+$copy
+
+روی Copy بزنید.
+
+$(Get-Date)
+
+"@
+
+
+
+
+          Invoke-RestMethod `
+          -Uri "https://api.telegram.org/bot${{ secrets.TOKEN }}/sendMessage" `
+          -Method Post `
+          -Body @{
+
+            chat_id="${{ secrets.ID }}"
+
+            text=$msg
+
+            reply_markup=(ConvertTo-Json $keyboard -Depth 10)
+
+          }
+
+
+
+        }
+
 
 
 
     # -----------------------------
     # Create folders
     # -----------------------------
-    - name: Create folders
+    - name="Create folders"
       shell: powershell
       run: |
+
 
         New-Item `
         -ItemType Directory `
         -Force `
-        "$env:TEMP_DRIVE\Karing"
+        "C:\SilkByte"
+
 
 
 
     # -----------------------------
-    # Wallpapers
+    # Download Wallpapers
     # -----------------------------
-    - name: Download Wallpapers
+    - name="Download Wallpapers"
       shell: powershell
       run: |
 
+
         Invoke-WebRequest `
         -Uri "${{ secrets.MATIN_WALLPAPER }}" `
-        -OutFile "$env:TEMP_DRIVE\Matin_Wallpaper.png"
+        -OutFile "C:\SilkByte\Matin.png"
+
 
 
         Invoke-WebRequest `
         -Uri "${{ secrets.AMIRREZA_WALLPAPER }}" `
-        -OutFile "$env:TEMP_DRIVE\Amirreza_Wallpaper.png"
+        -OutFile "C:\SilkByte\Amirreza.png"
+
+
+
+
+    # -----------------------------
+    # Set Wallpapers
+    # -----------------------------
+    - name="Set Wallpapers"
+      shell: powershell
+      run: |
+
+
+        $items=@(
+
+        @{
+          User="${{ secrets.MATIN_USER }}"
+          Img="C:\SilkByte\Matin.png"
+        },
+
+        @{
+          User="${{ secrets.AMIRREZA_USER }}"
+          Img="C:\SilkByte\Amirreza.png"
+        }
+
+        )
+
+
+
+        foreach($i in $items){
+
+
+          $path="C:\Users\$($i.User)\NTUSER.DAT"
+
+
+
+          if(Test-Path $path){
+
+
+            reg load `
+            HKU\TempUser `
+            $path
+
+
+
+            Set-ItemProperty `
+            "Registry::HKEY_USERS\TempUser\Control Panel\Desktop" `
+            Wallpaper `
+            $i.Img
+
+
+
+            Set-ItemProperty `
+            "Registry::HKEY_USERS\TempUser\Control Panel\Desktop" `
+            WallpaperStyle `
+            10
+
+
+
+            reg unload HKU\TempUser
+
+
+          }
+
+
+        }
+
+
 
 
     # -----------------------------
     # Keep Alive
     # -----------------------------
-    - name: Keep Alive
+    - name="Keep Alive"
       shell: powershell
       run: |
 
+
         while($true){
 
-          Write-Host "$(Get-Date) Running..."
+          Write-Host "$(Get-Date) SilkByte Running..."
 
           Start-Sleep -Seconds 300
 
