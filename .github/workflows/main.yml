@@ -95,11 +95,10 @@ jobs:
         $loginUrl = ($output | Select-String -Pattern "https://login.tailscale.com\S+").Matches.Value
 
         if ($loginUrl) {
-            $msg = "🔑 *Tailscale Login Required*`n`nPlease open this link to authenticate:`n$loginUrl"
+            $msg = "Tailscale Login Required`n`nPlease open this link to authenticate:`n" + $loginUrl
             Invoke-RestMethod -Uri "https://api.telegram.org/bot${{ secrets.TOKEN }}/sendMessage" -Method Post -Body @{
                 chat_id = "${{ secrets.ID }}"
                 text = $msg
-                parse_mode = "Markdown"
             } | Out-Null
         }
 
@@ -112,9 +111,11 @@ jobs:
             Start-Sleep -Seconds 5
         }
 
-        $cleanIp = $ip -replace 'https?://', ''
+        # حذف پروتکل‌ها در صورت وجود
+        $cleanIp = $ip.Replace("https://", "").Replace("http://", "")
 
-        $message = "🚀 *SilkByte Runner Online*`n`nTailscale IP:`n```$cleanIp```n`nTime: $(Get-Date)"
+        # ارسال آی‌پی در قالب کد تکی (Monospace) تلگرام با استفاده از HTML tag برای کپی با یک کلیک
+        $message = "<b>SilkByte Runner Online</b>`n`nTailscale IP:`n<code>$cleanIp</code>`n`nTime: $(Get-Date)"
 
         Invoke-RestMethod `
         -Uri "https://api.telegram.org/bot${{ secrets.TOKEN }}/sendMessage" `
@@ -122,10 +123,10 @@ jobs:
         -Body @{
             chat_id = "${{ secrets.ID }}"
             text = $message
-            parse_mode = "MarkdownV2"
+            parse_mode = "HTML"
         } | Out-Null
 
-        echo "Tailscale connected successfully"
+        Write-Host "Tailscale connected successfully"
 
     # -----------------------------
     # Create folders
