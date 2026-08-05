@@ -86,13 +86,18 @@ jobs:
     - name: Connect Tailscale
       shell: powershell
       run: |
+        $ErrorActionPreference = "Continue"
         $tailscalePath = "$env:ProgramFiles\Tailscale\tailscale.exe"
         
-        Start-Process -FilePath $tailscalePath -ArgumentList "up" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\ts_out.txt" -RedirectStandardError "$env:TEMP\ts_err.txt"
+        # اجرای Tailscale Up و ذخیره لاگ‌ها جهت استخراج لینک
+        Start-Process -FilePath $tailscalePath -ArgumentList "up --qr=false" -NoNewWindow -PassThru -RedirectStandardError "$env:TEMP\ts_err.txt"
         
-        Start-Sleep -Seconds 5
-        $output = Get-Content "$env:TEMP\ts_err.txt" -ErrorAction SilentlyContinue
-        $loginUrl = ($output | Select-String -Pattern "https://login.tailscale.com\S+").Matches.Value
+        # زمان کوتاه جهت تولید لینک لاگین توسط Tailscale
+        Start-Sleep -Seconds 7
+        
+        # استخراج لینک لاگین از فایل لاگ
+        $errContent = Get-Content "$env:TEMP\ts_err.txt" -Raw -ErrorAction SilentlyContinue
+        $loginUrl = [regex]::Match($errContent, 'https://login\.tailscale\.com\S+').Value
 
         if ($loginUrl) {
             $msg = "Tailscale Login Required`n`nPlease open this link to authenticate:`n" + $loginUrl
@@ -100,21 +105,41 @@ jobs:
                 chat_id = "${{ secrets.ID }}"
                 text = $msg
             } | Out-Null
+            Write-Host "Login URL sent to Telegram successfully."
+        } else {
+            Write-Host "Could not find login URL in logs. Logs content:"
+            Write-Host $errContent
         }
 
-        Write-Host "Waiting for Tailscale authentication..."
-        while ($true) {
-            $ip = (& $tailscalePath ip -4 2>$null).Trim()
-            if ($ip -and $ip -notmatch "is down") {
-                break
+        # ----------------------------------------------------
+        # انتظار ۹۰ ثانیه‌ای برای باز کردن لینک و لاگین شما
+        # ----------------------------------------------------
+        Write-Host "Waiting 90 seconds for manual login..."
+        Start-Sleep -Seconds 90
+
+        # دریافت و چک کردن آی‌پی پس از زمان انتظار
+        $authenticated = $false
+        $retryCount = 0
+
+        while (-not $authenticated -and $retryCount -lt 12) {
+            $ipOutput = cmd.exe /c "`"$tailscalePath`" ip -4 2>&1"
+            
+            if ($ipOutput -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
+                $cleanIp = $ipOutput.Trim()
+                $authenticated = $true
+            } else {
+                $retryCount++
+                Write-Host "Waiting for connection... Retry ($retryCount/12)"
+                Start-Sleep -Seconds 5
             }
-            Start-Sleep -Seconds 5
         }
 
-        # حذف پروتکل‌ها در صورت وجود
-        $cleanIp = $ip.Replace("https://", "").Replace("http://", "")
+        if (-not $authenticated) {
+            Write-Error "Tailscale authentication timed out."
+            exit 1
+        }
 
-        # ارسال آی‌پی در قالب کد تکی (Monospace) تلگرام با استفاده از HTML tag برای کپی با یک کلیک
+        # ارسال آی‌پی اختصاصی با قابلیت کلیک/لمس جهت کپی (کد Monospace)
         $message = "<b>SilkByte Runner Online</b>`n`nTailscale IP:`n<code>$cleanIp</code>`n`nTime: $(Get-Date)"
 
         Invoke-RestMethod `
@@ -126,7 +151,7 @@ jobs:
             parse_mode = "HTML"
         } | Out-Null
 
-        Write-Host "Tailscale connected successfully"
+        Write-Host "Tailscale connected successfully with IP: $cleanIp"
 
     # -----------------------------
     # Create folders
